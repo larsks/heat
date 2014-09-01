@@ -143,19 +143,37 @@ class DockerContainerTest(HeatTestCase):
         self.assertRaises(exception.InvalidTemplateAttribute,
                           container.FnGetAtt, 'invalid_attribute')
 
+    @skipIf(docker is None, 'docker-py not available')
     def test_resource_delete(self):
         container = self.create_container('Blog')
         scheduler.TaskRunner(container.delete)()
         self.assertEqual((container.DELETE, container.COMPLETE),
                          container.state)
-        running = self.get_container_state(container)['Running']
-        self.assertIs(False, running)
+
+        exists = True
+        try:
+            self.get_container_state(container)['Running']
+        except docker.errors.APIError as error:
+            if error.response.status_code == 404:
+                exists = False
+            else:
+                raise
+
+        self.assertIs(False, exists)
 
     def test_resource_already_deleted(self):
         container = self.create_container('Blog')
         scheduler.TaskRunner(container.delete)()
-        running = self.get_container_state(container)['Running']
-        self.assertIs(False, running)
+
+        exists = True
+        try:
+            self.get_container_state(container)['Running']
+        except docker.errors.APIError as error:
+            if error.response.status_code == 404:
+                exists = False
+            else:
+                raise
+        self.assertIs(False, exists)
 
         scheduler.TaskRunner(container.delete)()
         self.m.VerifyAll()
