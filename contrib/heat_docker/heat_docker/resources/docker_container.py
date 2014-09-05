@@ -144,6 +144,8 @@ class DockerContainer(resource.Resource):
         ),
     }
 
+    if not hasattr('attributes', 'Schema'):
+        attributes.Schema = lambda x: x
     attributes_schema = {
         INFO: attributes.Schema(
             _('Container info.')
