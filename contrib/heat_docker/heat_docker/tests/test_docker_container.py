@@ -14,15 +14,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import mock
+
 from heat.common import exception
 from heat.common import template_format
 from heat.engine import resource
 from heat.engine import scheduler
+from heat.openstack.common.importutils import try_import
 from heat.tests.common import HeatTestCase
 from heat.tests import utils
 
+from testtools import skipIf
+
 from ..resources import docker_container  # noqa
 from .fake_docker_client import FakeDockerClient  # noqa
+
+docker = try_import('docker')
 
 
 template = '''
@@ -49,15 +56,16 @@ class DockerContainerTest(HeatTestCase):
 
     def setUp(self):
         super(DockerContainerTest, self).setUp()
-        utils.setup_dummy_db()
         for res_name, res_class in docker_container.resource_mapping().items():
             resource._register_class(res_name, res_class)
+        self.addCleanup(self.m.VerifyAll)
 
     def create_container(self, resource_name):
         t = template_format.parse(template)
         stack = utils.parse_stack(t)
         resource = docker_container.DockerContainer(
-            resource_name, t['Resources'][resource_name], stack)
+            resource_name,
+            stack.t.resource_definitions(stack)[resource_name], stack)
         self.m.StubOutWithMock(resource, 'get_client')
         resource.get_client().MultipleTimes().AndReturn(FakeDockerClient())
         self.assertIsNone(resource.validate())
@@ -76,7 +84,50 @@ class DockerContainerTest(HeatTestCase):
         self.assertTrue(container.resource_id)
         running = self.get_container_state(container)['Running']
         self.assertIs(True, running)
-        self.m.VerifyAll()
+        client = container.get_client()
+        self.assertEqual(['samalba/wordpress'], client.pulled_images)
+        self.assertIsNone(client.container_create[0]['name'])
+
+    def test_create_with_name(self):
+        t = template_format.parse(template)
+        stack = utils.parse_stack(t)
+        definition = stack.t.resource_definitions(stack)['Blog']
+        definition['Properties']['name'] = 'super-blog'
+        resource = docker_container.DockerContainer(
+            'Blog', definition, stack)
+        self.m.StubOutWithMock(resource, 'get_client')
+        resource.get_client().MultipleTimes().AndReturn(FakeDockerClient())
+        self.assertIsNone(resource.validate())
+        self.m.ReplayAll()
+        scheduler.TaskRunner(resource.create)()
+        self.assertEqual((resource.CREATE, resource.COMPLETE),
+                         resource.state)
+        client = resource.get_client()
+        self.assertEqual(['samalba/wordpress'], client.pulled_images)
+        self.assertEqual('super-blog', client.container_create[0]['name'])
+
+    def test_start_with_bindings_and_links(self):
+        t = template_format.parse(template)
+        stack = utils.parse_stack(t)
+        definition = stack.t.resource_definitions(stack)['Blog']
+        definition['Properties']['port_bindings'] = {
+            '80/tcp': [{'HostPort': '80'}]}
+        definition['Properties']['links'] = {'db': 'mysql'}
+        resource = docker_container.DockerContainer(
+            'Blog', definition, stack)
+        self.m.StubOutWithMock(resource, 'get_client')
+        resource.get_client().MultipleTimes().AndReturn(FakeDockerClient())
+        self.assertIsNone(resource.validate())
+        self.m.ReplayAll()
+        scheduler.TaskRunner(resource.create)()
+        self.assertEqual((resource.CREATE, resource.COMPLETE),
+                         resource.state)
+        client = resource.get_client()
+        self.assertEqual(['samalba/wordpress'], client.pulled_images)
+        self.assertEqual({'db': 'mysql'}, client.container_start[0]['links'])
+        self.assertEqual(
+            {'80/tcp': [{'HostPort': '80'}]},
+            client.container_start[0]['port_bindings'])
 
     def test_resource_attributes(self):
         container = self.create_container('Blog')
@@ -91,7 +142,6 @@ class DockerContainerTest(HeatTestCase):
         # Test a non existing attribute
         self.assertRaises(exception.InvalidTemplateAttribute,
                           container.FnGetAtt, 'invalid_attribute')
-        self.m.VerifyAll()
 
     def test_resource_delete(self):
         container = self.create_container('Blog')
@@ -100,6 +150,34 @@ class DockerContainerTest(HeatTestCase):
                          container.state)
         running = self.get_container_state(container)['Running']
         self.assertIs(False, running)
+
+    def test_resource_already_deleted(self):
+        container = self.create_container('Blog')
+        scheduler.TaskRunner(container.delete)()
+        running = self.get_container_state(container)['Running']
+        self.assertIs(False, running)
+
+        scheduler.TaskRunner(container.delete)()
+        self.m.VerifyAll()
+
+    @skipIf(docker is None, 'docker-py not available')
+    def test_resource_delete_exception(self):
+        response = mock.MagicMock()
+        response.status_code = 404
+        response.content = 'some content'
+
+        container = self.create_container('Blog')
+        self.m.StubOutWithMock(container.get_client(), 'kill')
+        container.get_client().kill(container.resource_id).AndRaise(
+            docker.errors.APIError('Not found', response))
+
+        self.m.StubOutWithMock(container, '_get_container_status')
+        container._get_container_status(container.resource_id).AndRaise(
+            docker.errors.APIError('Not found', response))
+
+        self.m.ReplayAll()
+
+        scheduler.TaskRunner(container.delete)()
         self.m.VerifyAll()
 
     def test_resource_suspend_resume(self):
@@ -116,4 +194,3 @@ class DockerContainerTest(HeatTestCase):
                          container.state)
         running = self.get_container_state(container)['Running']
         self.assertIs(True, running)
-        self.m.VerifyAll()

@@ -14,12 +14,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import six
+
+from heat.engine import attributes
 from heat.engine import properties
 from heat.engine import resource
 from heat.openstack.common.gettextutils import _
 from heat.openstack.common import log as logging
 
-logger = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 DOCKER_INSTALLED = False
 # conditionally import so tests can work without having the dependency
@@ -33,115 +36,148 @@ except ImportError:
 
 class DockerContainer(resource.Resource):
 
+    PROPERTIES = (
+        DOCKER_ENDPOINT, HOSTNAME, USER, MEMORY, PORT_SPECS,
+        PRIVILEGED, TTY, OPEN_STDIN, STDIN_ONCE, ENV, CMD, DNS,
+        IMAGE, VOLUMES, VOLUMES_FROM, PORT_BINDINGS, LINKS, NAME,
+    ) = (
+        'docker_endpoint', 'hostname', 'user', 'memory', 'port_specs',
+        'privileged', 'tty', 'open_stdin', 'stdin_once', 'env', 'cmd', 'dns',
+        'image', 'volumes', 'volumes_from', 'port_bindings', 'links', 'name'
+    )
+
+    ATTRIBUTES = (
+        INFO, NETWORK_INFO, NETWORK_IP, NETWORK_GATEWAY,
+        NETWORK_TCP_PORTS, NETWORK_UDP_PORTS, LOGS, LOGS_HEAD,
+        LOGS_TAIL,
+    ) = (
+        'info', 'network_info', 'network_ip', 'network_gateway',
+        'network_tcp_ports', 'network_udp_ports', 'logs', 'logs_head',
+        'logs_tail',
+    )
+
     properties_schema = {
-        'docker_endpoint': properties.Schema(
+        DOCKER_ENDPOINT: properties.Schema(
             properties.Schema.STRING,
             _('Docker daemon endpoint (by default the local docker daemon '
-              'will be used)'),
+              'will be used).'),
             default=None
         ),
-        'hostname': properties.Schema(
+        HOSTNAME: properties.Schema(
             properties.Schema.STRING,
-            _('Hostname of the container'),
+            _('Hostname of the container.'),
             default=''
         ),
-        'user': properties.Schema(
+        USER: properties.Schema(
             properties.Schema.STRING,
-            _('Username or UID'),
+            _('Username or UID.'),
             default=''
         ),
-        'memory': properties.Schema(
+        MEMORY: properties.Schema(
             properties.Schema.INTEGER,
-            _('Memory limit (Bytes)'),
+            _('Memory limit (Bytes).'),
             default=0
         ),
-        'attach_stdin': properties.Schema(
-            properties.Schema.BOOLEAN,
-            _('Attach to the the process\' standard input'),
-            default=False
-        ),
-        'attach_stdout': properties.Schema(
-            properties.Schema.BOOLEAN,
-            _('Attach to the process\' standard output'),
-            default=True
-        ),
-        'attach_stderr': properties.Schema(
-            properties.Schema.BOOLEAN,
-            _('Attach to the process\' standard error'),
-            default=True
-        ),
-        'port_specs': properties.Schema(
+        PORT_SPECS: properties.Schema(
             properties.Schema.LIST,
-            _('TCP/UDP ports mapping'),
+            _('TCP/UDP ports mapping.'),
             default=None
         ),
-        'privileged': properties.Schema(
+        PORT_BINDINGS: properties.Schema(
+            properties.Schema.MAP,
+            _('TCP/UDP ports bindings.'),
+        ),
+        LINKS: properties.Schema(
+            properties.Schema.MAP,
+            _('Links to other containers.'),
+        ),
+        NAME: properties.Schema(
+            properties.Schema.STRING,
+            _('Name of the container.'),
+        ),
+        PRIVILEGED: properties.Schema(
             properties.Schema.BOOLEAN,
-            _('Enable extended privileges'),
+            _('Enable extended privileges.'),
             default=False
         ),
-        'tty': properties.Schema(
+        TTY: properties.Schema(
             properties.Schema.BOOLEAN,
-            _('Allocate a pseudo-tty'),
+            _('Allocate a pseudo-tty.'),
             default=False
         ),
-        'open_stdin': properties.Schema(
+        OPEN_STDIN: properties.Schema(
             properties.Schema.BOOLEAN,
-            _('Open stdin'),
+            _('Open stdin.'),
             default=False
         ),
-        'stdin_once': properties.Schema(
+        STDIN_ONCE: properties.Schema(
             properties.Schema.BOOLEAN,
-            _('If true, close stdin after the 1 attached client disconnects'),
+            _('If true, close stdin after the 1 attached client disconnects.'),
             default=False
         ),
-        'env': properties.Schema(
+        ENV: properties.Schema(
             properties.Schema.LIST,
-            _('Set environment variables'),
-            default=None
+            _('Set environment variables.'),
         ),
-        'cmd': properties.Schema(
+        CMD: properties.Schema(
             properties.Schema.LIST,
-            _('Command to run after spawning the container'),
+            _('Command to run after spawning the container.'),
             default=[]
         ),
-        'dns': properties.Schema(
+        DNS: properties.Schema(
             properties.Schema.LIST,
-            _('Set custom dns servers'),
-            default=None
+            _('Set custom dns servers.'),
         ),
-        'image': properties.Schema(
+        IMAGE: properties.Schema(
             properties.Schema.STRING,
-            _('Image name')
+            _('Image name.')
         ),
-        'volumes': properties.Schema(
+        VOLUMES: properties.Schema(
             properties.Schema.MAP,
-            _('Create a bind mount'),
+            _('Create a bind mount.'),
             default={}
         ),
-        'volumes_from': properties.Schema(
-            properties.Schema.STRING,
-            _('Mount all specified volumes'),
+        VOLUMES_FROM: properties.Schema(
+            properties.Schema.LIST,
+            _('Mount all specified volumes.'),
             default=''
         ),
     }
 
     attributes_schema = {
-        'info': _('Container info'),
-        'network_info': _('Container network info'),
-        'network_ip': _('Container ip address'),
-        'network_gateway': _('Container ip gateway'),
-        'network_tcp_ports': _('Container TCP ports'),
-        'network_udp_ports': _('Container UDP ports'),
-        'logs': _('Container logs'),
-        'logs_head': _('Container first logs line'),
-        'logs_tail': _('Container last logs line')
+        INFO: attributes.Schema(
+            _('Container info.')
+        ),
+        NETWORK_INFO: attributes.Schema(
+            _('Container network info.')
+        ),
+        NETWORK_IP: attributes.Schema(
+            _('Container ip address.')
+        ),
+        NETWORK_GATEWAY: attributes.Schema(
+            _('Container ip gateway.')
+        ),
+        NETWORK_TCP_PORTS: attributes.Schema(
+            _('Container TCP ports.')
+        ),
+        NETWORK_UDP_PORTS: attributes.Schema(
+            _('Container UDP ports.')
+        ),
+        LOGS: attributes.Schema(
+            _('Container logs.')
+        ),
+        LOGS_HEAD: attributes.Schema(
+            _('Container first logs line.')
+        ),
+        LOGS_TAIL: attributes.Schema(
+            _('Container last logs line.')
+        ),
     }
 
     def get_client(self):
         client = None
         if DOCKER_INSTALLED:
-            endpoint = self.properties.get('docker_endpoint')
+            endpoint = self.properties.get(self.DOCKER_ENDPOINT)
             if endpoint:
                 client = docker.Client(endpoint)
             else:
@@ -151,7 +187,7 @@ class DockerContainer(resource.Resource):
     def _parse_networkinfo_ports(self, networkinfo):
         tcp = []
         udp = []
-        for port, info in networkinfo['Ports'].iteritems():
+        for port, info in six.iteritems(networkinfo['Ports']):
             p = port.split('/')
             if not info or len(p) != 2 or 'HostPort' not in info[0]:
                 continue
@@ -210,29 +246,40 @@ class DockerContainer(resource.Resource):
             return logs.split('\n').pop()
 
     def handle_create(self):
-        args = {
-            'image': self.properties['image'],
-            'command': self.properties['cmd'],
-            'hostname': self.properties['hostname'],
-            'user': self.properties['user'],
-            'stdin_open': self.properties['open_stdin'],
-            'tty': self.properties['tty'],
-            'mem_limit': self.properties['memory'],
-            'ports': self.properties['port_specs'],
-            'environment': self.properties['env'],
-            'dns': self.properties['dns'],
-            'volumes': self.properties['volumes'],
-            'volumes_from': self.properties['volumes_from'],
+        create_args = {
+            'image': self.properties[self.IMAGE],
+            'command': self.properties[self.CMD],
+            'hostname': self.properties[self.HOSTNAME],
+            'user': self.properties[self.USER],
+            'stdin_open': self.properties[self.OPEN_STDIN],
+            'tty': self.properties[self.TTY],
+            'mem_limit': self.properties[self.MEMORY],
+            'ports': self.properties[self.PORT_SPECS],
+            'environment': self.properties[self.ENV],
+            'dns': self.properties[self.DNS],
+            'volumes': self.properties[self.VOLUMES],
+            'name': self.properties[self.NAME]
         }
         client = self.get_client()
-        result = client.create_container(**args)
+        client.pull(self.properties[self.IMAGE])
+        result = client.create_container(**create_args)
         container_id = result['Id']
         self.resource_id_set(container_id)
 
-        kwargs = {}
-        if self.properties['privileged']:
-            kwargs['privileged'] = True
-        client.start(container_id, **kwargs)
+        start_args = {}
+
+        if self.properties[self.PRIVILEGED]:
+            start_args[self.PRIVILEGED] = True
+        if self.properties[self.VOLUMES]:
+            start_args['binds'] = self.properties[self.VOLUMES]
+        if self.properties[self.VOLUMES_FROM]:
+            start_args['volumes_from'] = self.properties[self.VOLUMES_FROM]
+        if self.properties[self.PORT_BINDINGS]:
+            start_args['port_bindings'] = self.properties[self.PORT_BINDINGS]
+        if self.properties[self.LINKS]:
+            start_args['links'] = self.properties[self.LINKS]
+
+        client.start(container_id, **start_args)
         return container_id
 
     def _get_container_status(self, container_id):
@@ -248,11 +295,22 @@ class DockerContainer(resource.Resource):
         if self.resource_id is None:
             return
         client = self.get_client()
-        client.kill(self.resource_id)
+        try:
+            client.kill(self.resource_id)
+        except docker.errors.APIError as ex:
+            if ex.response.status_code != 404:
+                raise
         return self.resource_id
 
     def check_delete_complete(self, container_id):
-        status = self._get_container_status(container_id)
+        if container_id is None:
+            return True
+        try:
+            status = self._get_container_status(container_id)
+        except docker.errors.APIError as ex:
+            if ex.response.status_code == 404:
+                return True
+            raise
         return (not status['Running'])
 
     def handle_suspend(self):
@@ -288,5 +346,5 @@ def available_resource_mapping():
     if DOCKER_INSTALLED:
         return resource_mapping()
     else:
-        logger.warn(_("Docker plug-in loaded, but docker lib not installed."))
+        LOG.warn(_("Docker plug-in loaded, but docker lib not installed."))
         return {}
