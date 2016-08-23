@@ -896,7 +896,19 @@ class HOTemplateTest(common.HeatTestCase):
         exc = self.assertRaises(TypeError, self.resolve, snippet, tmpl)
         self.assertIn('must operate on a list', six.text_type(exc))
 
-    def test_merge(self):
+    def test_concat(self):
+        snippet = {'concat': [[1, 2, 3],  [3, 4, 5]]}
+        tmpl = template.Template(hot_mitaka_tpl_empty)
+        resolved = self.resolve(snippet, tmpl)
+        self.assertEqual(resolved, [1, 2, 3, 3, 4, 5])
+
+    def test_unique(self):
+        snippet = {'unique': [[1, 2, 3],  [3, 4, 5]]}
+        tmpl = template.Template(hot_mitaka_tpl_empty)
+        resolved = self.resolve(snippet, tmpl)
+        self.assertEqual(sorted(resolved), [1, 2, 3, 4, 5])
+
+    def test_map_merge(self):
         snippet = {'map_merge': [{'f1': 'b1', 'f2': 'b2'}, {'f1': 'b2'}]}
         tmpl = template.Template(hot_mitaka_tpl_empty)
         resolved = self.resolve(snippet, tmpl)

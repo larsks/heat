@@ -933,3 +933,85 @@ class Equals(function.Function):
         resolved_v2 = function.resolve(self.value2)
 
         return resolved_v1 == resolved_v2
+
+
+class ListMerge(function.Function):
+    """A function for merging lists.
+
+    Takes the form::
+
+        { "concat" : [[1,2,3], [3,4,5]] }
+
+    And resolves to::
+
+        [1,2,3,3,4,5]
+
+    """
+
+    def __init__(self, stack, fn_name, args):
+        super(ListMerge, self).__init__(stack, fn_name, args)
+        example = (_('"%s" : [ [val1, val2], [val3, val4] ]')
+                   % fn_name)
+        self.fmt_data = {'fn_name': fn_name, 'example': example}
+
+    def result(self):
+        args = function.resolve(self.args)
+
+        if not isinstance(args, collections.Sequence):
+            raise TypeError(_('Incorrect arguments to "%(fn_name)s" '
+                              'should be: %(example)s') % self.fmt_data)
+
+        def ensure_sequence(l):
+            if l is None:
+                return {}
+            elif isinstance(l, collections.Sequence):
+                return list(l)
+            else:
+                msg = _('Incorrect arguments: Items to merge must be lists.')
+                raise TypeError(msg)
+
+        ret_list = []
+        for l in args:
+            ret_list.extend(ensure_sequence(l))
+        return ret_list
+
+
+class ListMergeUnique(function.Function):
+    """A function for creating a list of unique elements from a list of lists.
+
+    Takes the form::
+
+        { "unique" : [[1,2,3], [3,4,5]] }
+
+    And resolves to::
+
+        [1,2,3,5]
+
+    """
+
+    def __init__(self, stack, fn_name, args):
+        super(ListMergeUnique, self).__init__(stack, fn_name, args)
+        example = (_('"%s" : [ [val1, val2], [val3, val4] ]')
+                   % fn_name)
+        self.fmt_data = {'fn_name': fn_name, 'example': example}
+
+    def result(self):
+        args = function.resolve(self.args)
+
+        if not isinstance(args, collections.Sequence):
+            raise TypeError(_('Incorrect arguments to "%(fn_name)s" '
+                              'should be: %(example)s') % self.fmt_data)
+
+        def ensure_list(l):
+            if l is None:
+                return {}
+            elif isinstance(l, collections.Sequence):
+                return list(l)
+            else:
+                msg = _('Incorrect arguments: Items to merge must be lists.')
+                raise TypeError(msg)
+
+        ret_list = set()
+        for l in args:
+            ret_list |= set(ensure_list(l))
+        return list(ret_list)
